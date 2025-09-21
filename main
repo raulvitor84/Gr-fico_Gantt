@@ -3,12 +3,14 @@ import plotly.express as px
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
+from datetime import date
 
 # --- Etapa 1: Leitura interativa da planilha ---
 try:
     excel_file = pd.ExcelFile('CONTROLE_DE_ATENDIMENTOS.xlsx')
 except FileNotFoundError:
-    print("Erro: O arquivo 'CONTROLE_DE_ATENDIMENTOS.xlsx' não foi encontrado. Verifique o nome do arquivo e o caminho.")
+    print(
+        "Erro: O arquivo 'CONTROLE_DE_ATENDIMENTOS.xlsx' não foi encontrado. Verifique o nome do arquivo e o caminho.")
     exit()
 
 print("As seguintes abas foram encontradas na planilha:")
@@ -45,7 +47,7 @@ col_mapping = {
     col_end_date: 'Data de Fim',
     col_name: 'Nome da Obra',
     col_obra: 'Obra',
-    col_tecnica: 'Técnica', # Novo mapeamento
+    col_tecnica: 'Técnica',  # Novo mapeamento
     col_status: 'STATUS',
     col_responsavel: 'Responsável',
     col_equipe: 'Equipe'
@@ -65,7 +67,8 @@ df_raw['Data de Fim'] = pd.to_datetime(df_raw['Data de Fim'], errors='coerce')
 df_raw['STATUS'] = df_raw['STATUS'].str.strip().str.upper()
 
 # Cria a nova coluna para o eixo Y, tornando o nome de cada obra único
-df_raw['Identificador + Obra'] = df_raw['Nome da Obra'].fillna('') + ' - ' + df_raw['Obra'].fillna('') + ' (' + df_raw.index.astype(str) + ')'
+df_raw['Identificador + Obra'] = df_raw['Nome da Obra'].fillna('') + ' - ' + df_raw['Obra'].fillna(
+    '') + ' (' + df_raw.index.astype(str) + ')'
 
 # Encontra as obras que serão removidas
 df_missing_data = df_raw[df_raw['Data de Início'].isna() | df_raw['Data de Fim'].isna() | df_raw['Nome da Obra'].isna()]
@@ -79,7 +82,6 @@ df_filtered = df_raw[df_raw['STATUS'].isin(status_para_visualizar)]
 
 # Remove as linhas que ainda podem ter valores de data ausentes ou inválidos
 df_filtered = df_filtered.dropna(subset=['Data de Início', 'Data de Fim', 'Nome da Obra'])
-
 
 # --- Etapa 4: Construção do Dashboard ---
 app = dash.Dash(__name__)
@@ -96,8 +98,13 @@ app.layout = html.Div([
             style={'width': '50%'}
         )
     ], style={'display': 'flex', 'justify-content': 'center', 'gap': '10px', 'margin-bottom': '20px'}),
-    dcc.Graph(id='gantt-chart')
+    # Altera o estilo do gráfico para que ele seja maior
+    dcc.Graph(
+        id='gantt-chart',
+        style={'height': '80vh', 'width': '100%'}
+    )
 ])
+
 
 @app.callback(
     Output('gantt-chart', 'figure'),
@@ -116,11 +123,16 @@ def update_gantt_chart(selected_status):
         y='Identificador + Obra',
         color='STATUS',
         title=f'Linha do Tempo das Obras ({selected_status or "Todos"})',
-        # Inclui a nova coluna 'Técnica'
         hover_data=['Nome da Obra', 'Obra', 'Técnica', 'Equipe']
     )
     fig.update_yaxes(autorange='reversed')
+
+    # Adiciona a linha vertical para a data atual
+    today = date.today()
+    fig.add_vrect(x0=today, x1=today, line_width=2, line_dash="dash", line_color="red")
+
     return fig
+
 
 if __name__ == '__main__':
     app.run(debug=False)
