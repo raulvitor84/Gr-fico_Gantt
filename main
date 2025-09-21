@@ -1,0 +1,126 @@
+import pandas as pd
+import plotly.express as px
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+
+# --- Etapa 1: Leitura interativa da planilha ---
+try:
+    excel_file = pd.ExcelFile('CONTROLE_DE_ATENDIMENTOS.xlsx')
+except FileNotFoundError:
+    print("Erro: O arquivo 'CONTROLE_DE_ATENDIMENTOS.xlsx' não foi encontrado. Verifique o nome do arquivo e o caminho.")
+    exit()
+
+print("As seguintes abas foram encontradas na planilha:")
+print(excel_file.sheet_names)
+print("-" * 50)
+
+nome_da_aba_desejada = input("Digite o nome exato da aba que você quer analisar: ")
+
+try:
+    df_raw = pd.read_excel('CONTROLE_DE_ATENDIMENTOS.xlsx', sheet_name=nome_da_aba_desejada, header=2)
+except ValueError:
+    print(f"\nErro: A aba '{nome_da_aba_desejada}' não foi encontrada. Por favor, digite um nome válido.")
+    exit()
+
+print("\nColunas encontradas nesta aba:")
+print(df_raw.columns.tolist())
+print("-" * 50)
+
+# --- Etapa 2: Mapeamento interativo das colunas ---
+print("Por favor, digite o nome das colunas correspondentes (copie e cole da lista acima).")
+col_start_date = input("Nome da coluna com a DATA DE INÍCIO: ")
+col_end_date = input("Nome da coluna com a DATA DE FIM: ")
+col_name = input("Nome da coluna com o IDENTIFICADOR DA OBRA (ex: SS): ")
+col_obra = input("Nome da coluna com a OBRA: ")
+# Nova entrada para a coluna 'Técnica'
+col_tecnica = input("Nome da coluna com a TÉCNICA: ")
+col_status = input("Nome da coluna com o STATUS da obra: ")
+col_responsavel = input("Nome da coluna com o RESPONSÁVEL: ")
+col_equipe = input("Nome da coluna com a EQUIPE: ")
+
+# Mapeia as colunas para um formato padrão que o código entende
+col_mapping = {
+    col_start_date: 'Data de Início',
+    col_end_date: 'Data de Fim',
+    col_name: 'Nome da Obra',
+    col_obra: 'Obra',
+    col_tecnica: 'Técnica', # Novo mapeamento
+    col_status: 'STATUS',
+    col_responsavel: 'Responsável',
+    col_equipe: 'Equipe'
+}
+
+# Renomeia as colunas no DataFrame
+try:
+    df_raw = df_raw.rename(columns=col_mapping)
+except KeyError as e:
+    print(f"\nErro: A coluna {e} não foi encontrada na planilha. Verifique a digitação.")
+    exit()
+
+# --- Etapa 3: Preparação e Otimização dos Dados ---
+df_raw['Data de Início'] = pd.to_datetime(df_raw['Data de Início'], errors='coerce')
+df_raw['Data de Fim'] = pd.to_datetime(df_raw['Data de Fim'], errors='coerce')
+
+df_raw['STATUS'] = df_raw['STATUS'].str.strip().str.upper()
+
+# Cria a nova coluna para o eixo Y, tornando o nome de cada obra único
+df_raw['Identificador + Obra'] = df_raw['Nome da Obra'].fillna('') + ' - ' + df_raw['Obra'].fillna('') + ' (' + df_raw.index.astype(str) + ')'
+
+# Encontra as obras que serão removidas
+df_missing_data = df_raw[df_raw['Data de Início'].isna() | df_raw['Data de Fim'].isna() | df_raw['Nome da Obra'].isna()]
+print("\nObras removidas por conterem dados inválidos nas colunas de data ou identificador:")
+print(df_missing_data[['Nome da Obra', 'Data de Início', 'Data de Fim', 'STATUS']])
+print("-" * 50)
+
+# Filtra o DataFrame para incluir apenas os status desejados
+status_para_visualizar = ['EXECUTANDO', 'PREVISTO']
+df_filtered = df_raw[df_raw['STATUS'].isin(status_para_visualizar)]
+
+# Remove as linhas que ainda podem ter valores de data ausentes ou inválidos
+df_filtered = df_filtered.dropna(subset=['Data de Início', 'Data de Fim', 'Nome da Obra'])
+
+
+# --- Etapa 4: Construção do Dashboard ---
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1(f"Linha do Tempo das Obras ({nome_da_aba_desejada})", style={'text-align': 'center'}),
+    html.Div([
+        html.P("Filtrar por Status:"),
+        dcc.Dropdown(
+            id='status-dropdown',
+            options=[{'label': i, 'value': i} for i in df_filtered['STATUS'].unique()],
+            value=None,
+            clearable=True,
+            style={'width': '50%'}
+        )
+    ], style={'display': 'flex', 'justify-content': 'center', 'gap': '10px', 'margin-bottom': '20px'}),
+    dcc.Graph(id='gantt-chart')
+])
+
+@app.callback(
+    Output('gantt-chart', 'figure'),
+    Input('status-dropdown', 'value')
+)
+def update_gantt_chart(selected_status):
+    if selected_status:
+        df_final = df_filtered[df_filtered['STATUS'] == selected_status]
+    else:
+        df_final = df_filtered
+
+    fig = px.timeline(
+        df_final,
+        x_start='Data de Início',
+        x_end='Data de Fim',
+        y='Identificador + Obra',
+        color='STATUS',
+        title=f'Linha do Tempo das Obras ({selected_status or "Todos"})',
+        # Inclui a nova coluna 'Técnica'
+        hover_data=['Nome da Obra', 'Obra', 'Técnica', 'Equipe']
+    )
+    fig.update_yaxes(autorange='reversed')
+    return fig
+
+if __name__ == '__main__':
+    app.run(debug=False)
