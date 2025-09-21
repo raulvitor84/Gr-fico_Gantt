@@ -66,6 +66,9 @@ df_raw['Data de Fim'] = pd.to_datetime(df_raw['Data de Fim'], errors='coerce')
 
 df_raw['STATUS'] = df_raw['STATUS'].str.strip().str.upper()
 
+# Garante que a coluna 'Obra' seja do tipo string antes de concatenar
+df_raw['Obra'] = df_raw['Obra'].astype(str)
+
 # Cria a nova coluna para o eixo Y, tornando o nome de cada obra único
 df_raw['Identificador + Obra'] = df_raw['Nome da Obra'].fillna('') + ' - ' + df_raw['Obra'].fillna(
     '') + ' (' + df_raw.index.astype(str) + ')'
